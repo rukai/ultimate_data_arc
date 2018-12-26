@@ -1,5 +1,5 @@
 [package]
-name = "ultimate_data_arc_parser"
+name = "ultimate_data_arc"
 version = "0.1.0"
 authors = ["Rukai <rubickent@gmail.com>"]
 edition = "2018"

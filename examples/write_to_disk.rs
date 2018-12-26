@@ -1,12 +1,12 @@
 use std::fs::File;
 use std::env;
 
-use ultimate_data_arc_parser::ParseError;
+use ultimate_data_arc::ParseError;
 
 fn main() {
     if let Some(file_name) = env::args().collect::<Vec<String>>().get(1) {
         if let Ok(file) = File::open(file_name) {
-            match ultimate_data_arc_parser::parse(file) {
+            match ultimate_data_arc::parse(file) {
                 Ok(_) => {
                     println!("Do something cool with the data");
                 }
