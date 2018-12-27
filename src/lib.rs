@@ -55,17 +55,18 @@ struct NodeHeader {
     file_size: u32,
     folder_count: u32,
     file_count1: u32,
-    file_name_count: u32,
+    tree_count: u32,
 
-    sub_file_count1: u32,
-    last_table_count: u32,
+    sub_files1_count: u32,
+    file_lookup_count: u32,
     hash_folder_count: u32,
     file_information_count: u32,
 
     file_count2: u32,
-    sub_file_count2: u32,
+    sub_files2_count: u32,
     unk1: u32,
     unk2: u32,
+
     another_hash_table_size: u8,
     unk3: u8,
     unk4: u16,
@@ -121,7 +122,7 @@ struct BigHashEntry {
     unk8: u8,
     unk9: u8,
 }
-const BIG_HASH_ENTRY_SIZE: usize = 0x30;
+const BIG_HASH_ENTRY_SIZE: usize = 0x34;
 
 fn read_big_hash_entry(data: &[u8]) -> BigHashEntry {
     BigHashEntry {
@@ -129,15 +130,37 @@ fn read_big_hash_entry(data: &[u8]) -> BigHashEntry {
         folder: read_pair(&data[0x08..]),
         parent: read_pair(&data[0x10..]),
         hash4: read_pair(&data[0x18..]),
-        suboffset_start: LittleEndian::read_u32(&data[0x1c..]),
-        num_files: LittleEndian::read_u32(&data[0x20..]),
-        unk3: LittleEndian::read_u32(&data[0x24..]),
-        unk4: LittleEndian::read_u16(&data[0x28..]),
-        unk5: LittleEndian::read_u16(&data[0x2A..]),
-        unk6: data[0x2C],
-        unk7: data[0x2D],
-        unk8: data[0x2E],
-        unk9: data[0x2F],
+        suboffset_start: LittleEndian::read_u32(&data[0x20..]),
+        num_files: LittleEndian::read_u32(&data[0x24..]),
+        unk3: LittleEndian::read_u32(&data[0x28..]),
+        unk4: LittleEndian::read_u16(&data[0x2c..]),
+        unk5: LittleEndian::read_u16(&data[0x2e..]),
+        unk6: data[0x30],
+        unk7: data[0x31],
+        unk8: data[0x32],
+        unk9: data[0x33],
+    }
+}
+
+#[derive(Debug)]
+struct TreeEntry {
+    path: EntryPair,
+    ext: EntryPair,
+    folder: EntryPair,
+    file: EntryPair,
+    suboffset_index: u32,
+    flags: u32,
+}
+const TREE_ENTRY_SIZE: usize = 0x28;
+
+fn read_tree_entry(data: &[u8]) -> TreeEntry {
+    TreeEntry {
+        path: read_pair(&data[0x00..]),
+        ext: read_pair(&data[0x08..]),
+        folder: read_pair(&data[0x10..]),
+        file: read_pair(&data[0x18..]),
+        suboffset_index: LittleEndian::read_u32(&data[0x20..]),
+        flags: LittleEndian::read_u32(&data[0x24..]),
     }
 }
 
@@ -158,6 +181,22 @@ struct BigFileEntry {
     unk3: u32,
 }
 const BIG_FILE_ENTRY_SIZE: usize = 0x1c;
+
+#[derive(Debug, Pread)]
+struct FileEntry {
+    offset: u32,
+    comp_size: u32,
+    decomp_size: u32,
+    flags: u32,
+}
+const FILE_ENTRY_SIZE: usize = 0x10;
+
+#[derive(Debug, Pread)]
+struct HashBucket {
+    index: u32,
+    num_entries: u32,
+}
+const HASH_BUCKET_SIZE: usize = 0x08;
 
 pub fn internal_parse(mut file: File) -> Result<(), Error> {
     let mut buffer = vec!(0; ARC_HEADER_SIZE);
@@ -190,20 +229,28 @@ pub fn internal_parse(mut file: File) -> Result<(), Error> {
     // From this we know the end of each section and thus the start of the next section.
     let bulkfile_category_info = &buffer[..];
     let bulkfile_hash_lookup = &buffer[ENTRY_TRIPLET_SIZE * node_header.movie_count as usize..];
-    let bulk_files_by_name = &bulkfile_hash_lookup[ENTRY_PAIR_SIZE * node_header.part1_count as usize..];
-    let bulkfile_lookup_to_fileidx = &bulk_files_by_name[ENTRY_TRIPLET_SIZE * node_header.part1_count as usize..];
+    let bulkfiles_by_name = &bulkfile_hash_lookup[ENTRY_PAIR_SIZE * node_header.part1_count as usize..];
+    let bulkfile_lookup_to_fileidx = &bulkfiles_by_name[ENTRY_TRIPLET_SIZE * node_header.part1_count as usize..];
     let file_pairs = &bulkfile_lookup_to_fileidx[4 * node_header.part2_count as usize..];
     let another_hash_table = &file_pairs[FILE_PAIR_SIZE * node_header.music_file_count as usize..];
     let big_hashes = &another_hash_table[ENTRY_TRIPLET_SIZE * node_header.another_hash_table_size as usize..];
     let big_files = &big_hashes[BIG_HASH_ENTRY_SIZE * node_header.folder_count as usize..];
+    let folder_hash_lookup = &big_files[BIG_FILE_ENTRY_SIZE * (node_header.file_count1 + node_header.file_count2) as usize..];
+    let trees = &folder_hash_lookup[ENTRY_PAIR_SIZE * node_header.hash_folder_count as usize..];
+    let sub_files1 = &trees[TREE_ENTRY_SIZE * node_header.tree_count as usize..];
+    let sub_files2 = &sub_files1[FILE_ENTRY_SIZE * node_header.sub_files1_count as usize..];
+    let folder_to_big_hash = &sub_files2[FILE_ENTRY_SIZE * node_header.sub_files2_count as usize..];
+    let file_lookup_buckets = &folder_to_big_hash[ENTRY_PAIR_SIZE * node_header.folder_count as usize..];
+    let hash_bucket: HashBucket = file_lookup_buckets.pread_with(0, LE)?;
+    let file_lookup = &file_lookup_buckets[HASH_BUCKET_SIZE * (hash_bucket.num_entries as usize + 1) ..];
+    let numbers = &file_lookup[ENTRY_PAIR_SIZE * node_header.file_lookup_count as usize..];
 
     // Debug prints
     // TODO: print all elements
-    // TODO: Log instead of print
-    hexdump::hexdump(&bulkfile_category_info[..1000]);
+    // TODO: Log instead of print or add a toggle
     println!("bulkfile_category_info: {:x?}", read_triplet(bulkfile_category_info));
     println!("bulkfile_hash_lookup: {:x?}", read_pair(bulkfile_hash_lookup));
-    println!("bulk_files_by_name: {:x?}", read_triplet(bulk_files_by_name));
+    println!("bulkfiles_by_name: {:x?}", read_triplet(bulkfiles_by_name));
     println!("bulkfile_lookup_tofileidx: {:x?}", LittleEndian::read_u32(&bulkfile_lookup_to_fileidx));
     let file_pair: FilePair = file_pairs.pread_with(0, LE)?;
     println!("file_pairs: {:x?}", file_pair);
@@ -211,6 +258,17 @@ pub fn internal_parse(mut file: File) -> Result<(), Error> {
     println!("big_hashes: {:x?}", read_big_hash_entry(big_hashes));
     let big_file: BigFileEntry = big_files.pread_with(0, LE)?;
     println!("big_files: {:x?}", big_file);
+    println!("folder_hash_lookup: {:x?}", read_pair(folder_hash_lookup));
+    println!("trees: {:x?}", read_tree_entry(trees));
+    let file_entry: FileEntry = sub_files1.pread_with(0, LE)?;
+    println!("sub_files1: {:x?}", file_entry);
+    let file_entry: FileEntry = sub_files2.pread_with(0, LE)?;
+    println!("sub_files2: {:x?}", file_entry);
+    println!("folder_to_big_hash: {:x?}", read_pair(folder_to_big_hash));
+    let hash_bucket: HashBucket = file_lookup_buckets.pread_with(0, LE)?;
+    println!("file_lookup_buckets: {:x?}", hash_bucket);
+    println!("file_lookup: {:x?}", read_pair(file_lookup));
+    println!("numbers: {:x?}", read_pair(numbers));
 
     Ok(())
 }
