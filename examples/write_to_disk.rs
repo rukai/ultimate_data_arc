@@ -7,13 +7,13 @@ fn main() {
     if let Some(file_name) = env::args().collect::<Vec<String>>().get(1) {
         if let Ok(file) = File::open(file_name) {
             match DataArc::new(file) {
-                Ok(data_arc) => {
+                Ok(mut data_arc) => {
                     // TODO: Move this into another example
                     let data = data_arc.get_file("prebuilt:/nro/release/lua2cpp_mewtwo.nro").unwrap();
                     println!("Dump of mewtwo nro:");
                     hexdump::hexdump(&data);
 
-                    data_arc.debug_print();
+                    data_arc.debug_print().unwrap();
 
                     // TODO: Dump all files
                 }

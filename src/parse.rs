@@ -134,6 +134,16 @@ pub(crate) fn read_tree_entry(data: &[u8]) -> TreeEntry {
     }
 }
 
+const TREE_SUBOFFSET_MASK: u32 = 0b11;
+impl TreeEntry {
+    pub fn redirect(&self) -> bool {
+        self.flags & 0x200000 != 0
+    }
+    pub fn suboffset_index(&self) -> bool {
+        self.flags & TREE_SUBOFFSET_MASK == 0
+    }
+}
+
 #[derive(Debug, Pread)]
 pub(crate) struct FilePair {
     pub size: u64,
@@ -160,6 +170,21 @@ pub(crate) struct FileEntry {
     pub flags: u32,
 }
 pub(crate) const FILE_ENTRY_SIZE: usize = 0x10;
+
+impl FileEntry {
+    pub fn suboffset_redir(&self) -> bool {
+        unimplemented!()
+    }
+    pub fn suboffset_tree_index(&self) -> usize {
+        unimplemented!()
+    }
+    pub fn suboffset_decompressed(&self) -> bool {
+        self.flags & 0x07000000 == 0
+    }
+    pub fn suboffset_compressed_zstd(&self) -> bool {
+        self.flags & 0x07000000 == 0x03000000
+    }
+}
 
 #[derive(Debug, Pread)]
 pub(crate) struct HashBucket {
