@@ -1,14 +1,21 @@
 use std::fs::File;
 use std::env;
 
-use ultimate_data_arc::ParseError;
+use ultimate_data_arc::{ParseError, DataArc};
 
 fn main() {
     if let Some(file_name) = env::args().collect::<Vec<String>>().get(1) {
         if let Ok(file) = File::open(file_name) {
-            match ultimate_data_arc::parse(file) {
-                Ok(_) => {
-                    println!("Do something cool with the data");
+            match DataArc::new(file) {
+                Ok(data_arc) => {
+                    // TODO: Move this into another example
+                    let data = data_arc.get_file("prebuilt:/nro/release/lua2cpp_mewtwo.nro").unwrap();
+                    println!("Dump of mewtwo nro:");
+                    hexdump::hexdump(&data);
+
+                    data_arc.debug_print();
+
+                    // TODO: Dump all files
                 }
                 Err(ParseError::NotDataArc) => {
                     eprintln!("The file is not a valid data.arc file. (magic number was not detected)");
